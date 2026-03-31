@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zarjin Pisatelj</title>
+    <meta name="description" content="Zarjin Pisatelj - Govori in program piše!">
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 {
+            font-family: 'Comic Sans MS', cursive;
+            font-size: 2rem;
+            color: #A8DADC;
+            margin: 20px 0 5px;
+            text-align: center;
+        }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+            color: #aaa;
+        }
+        .dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background: orange;
+            flex-shrink: 0;
+        }
+        .record-btn {
+            width: 280px; height: 100px;
+            border-radius: 20px;
+            border: none;
+            background: #457B9D;
+            color: white;
+            font-size: 1.3rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 20px;
+        }
+        .record-btn.recording {
+            background: #E63946;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+        .label {
+            align-self: flex-start;
+            width: 100%;
+            max-width: 540px;
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        textarea {
+            width: 100%;
+            max-width: 540px;
+            height: 110px;
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 15px;
+            color: #eee;
+            font-size: 1rem;
+            padding: 12px;
+            resize: none;
+            margin-bottom: 10px;
+        }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 15px;
+            width: 100%;
+            max-width: 540px;
+        }
+        .btn {
+            flex: 1;
+            min-width: 100px;
+            padding: 12px 10px;
+            border-radius: 12px;
+            border: none;
+            color: white;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn:active { opacity: 0.7; }
+        .btn-green { background: #2D6A4F; }
+        .btn-blue { background: #457B9D; }
+        .btn-red { background: #E63946; }
+        .btn-gray { background: #444; }
+        .history-box {
+            width: 100%;
+            max-width: 540px;
+            height: 200px;
+            background: #16213e;
+            border: 1px solid #333;
+            border-radius: 15px;
+            color: #ccc;
+            font-size: 0.9rem;
+            padding: 12px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .footer {
+            margin-top: auto;
+            padding-top: 20px;
+            font-size: 0.75rem;
+            color: #555;
+        }
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2D6A4F;
+            color: white;
+            padding: 10px 24px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 999;
+        }
+        .toast.show { opacity: 1; }
+    </style>
+</head>
+<body>
+
+<h1>Zarjin Pisatelj ✍️</h1>
+
+<div class="status">
+    <div class="dot" id="dot"></div>
+    <span id="statusText">Pripravljena na tvoje zgodbe!</span>
+</div>
+
+<button class="record-btn" id="recordBtn" onclick="toggleRecording()">
+    🎤 ZAČNI PISANJE
+</button>
+
+<div class="label">Zadnji prepis:</div>
+<textarea id="lastTranscript" placeholder="Tukaj se bo pojavilo tvoje besedilo..."></textarea>
+
+<div class="btn-row">
+    <button class="btn btn-green" onclick="speakText()">🔊 Preberi</button>
+    <button class="btn btn-blue" onclick="copyText()">📋 Kopiraj</button>
+    <button class="btn btn-red" onclick="clearAll()">🗑️ Pobriši</button>
+    <button class="btn btn-gray" onclick="stopSpeaking()">⏹️ Ustavi</button>
+</div>
+
+<div class="label">Zgodovina tvojih misli:</div>
+<div class="history-box" id="historyBox"></div>
+
+<div class="footer">Zarjin Pisatelj • sl-SI • PWA</div>
+<div class="toast" id="toast"></div>
+
+<script>
+    let recognition = null;
+    let isRecording = false;
+    let history = [];
+
+    // Inicializacija Web Speech API
+    function initRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            setStatus("❌ Brskalnik ne podpira govora. Uporabi Chrome.", "red");
+            return null;
+        }
+        const r = new SpeechRecognition();
+        r.lang = 'sl-SI';
+        r.continuous = true;
+        r.interimResults = true;
+
+        r.onresult = (event) => {
+            let interim = '';
+            let final = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                if (event.results[i].isFinal) {
+                    final += event.results[i][0].transcript;
+                } else {
+                    interim += event.results[i][0].transcript;
+                }
+            }
+            document.getElementById('lastTranscript').value = final || interim;
+            if (final) {
+                addToHistory(final.trim());
+            }
+        };
+
+        r.onerror = (e) => {
+            setStatus("❌ Napaka: " + e.error, "red");
+            stopRecording();
+        };
+
+        r.onend = () => {
+            if (isRecording) r.start(); // Nadaljuj poslušanje
+        };
+
+        return r;
+    }
+
+    function toggleRecording() {
+        if (!isRecording) {
+            startRecording();
+        } else {
+            stopRecording();
+        }
+    }
+
+    function startRecording() {
+        recognition = initRecognition();
+        if (!recognition) return;
+        recognition.start();
+        isRecording = true;
+        document.getElementById('recordBtn').textContent = '⏹️ USTAVI PISANJE';
+        document.getElementById('recordBtn').classList.add('recording');
+        setStatus("👂 Poslušam te...", "red");
+    }
+
+    function stopRecording() {
+        if (recognition) recognition.stop();
+        isRecording = false;
+        document.getElementById('recordBtn').textContent = '🎤 ZAČNI PISANJE';
+        document.getElementById('recordBtn').classList.remove('recording');
+        setStatus("✅ Končano!", "green");
+    }
+
+    function speakText() {
+        const text = document.getElementById('lastTranscript').value.trim();
+        if (!text) return;
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'sl-SI';
+        // Poišči slovenski glas
+        const voices = window.speechSynthesis.getVoices();
+        const sloVoice = voices.find(v => v.lang === 'sl-SI' || v.lang.startsWith('sl'));
+        if (sloVoice) utter.voice = sloVoice;
+        utter.rate = 0.95;
+        setStatus("🔊 Berem...", "blue");
+        utter.onend = () => setStatus("✅ Končano!", "green");
+        window.speechSynthesis.speak(utter);
+    }
+
+    function stopSpeaking() {
+        window.speechSynthesis.cancel();
+        setStatus("✅ Ustavljeno.", "green");
+    }
+
+    function copyText() {
+        const text = document.getElementById('lastTranscript').value.trim();
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => showToast("📋 Kopirano!"));
+    }
+
+    function clearAll() {
+        document.getElementById('lastTranscript').value = '';
+        document.getElementById('historyBox').textContent = '';
+        history = [];
+        setStatus("🗑️ Pobrisano.", "orange");
+    }
+
+    function addToHistory(text) {
+        history.push(text);
+        const box = document.getElementById('historyBox');
+        box.textContent = history.join('\n\n');
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function setStatus(text, color) {
+        document.getElementById('statusText').textContent = text;
+        const colors = { red: '#E63946', green: '#52b788', orange: 'orange', blue: '#A8DADC' };
+        document.getElementById('dot').style.background = colors[color] || 'gray';
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 2000);
+    }
+
+    // Naloži glasove ob zagonu
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+</script>
+</body>
+</html>
