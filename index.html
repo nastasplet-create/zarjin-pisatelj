@@ -8,16 +8,16 @@
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: white; text-align: center; padding: 20px; margin: 0; }
         h1 { color: #A8DADC; font-family: 'Comic Sans MS', cursive; margin-top: 30px; }
         #status { color: #aaa; font-size: 0.9rem; margin-bottom: 20px; }
-        .record-btn { 
-            width: 280px; height: 90px; border-radius: 25px; border: none; 
-            background: #457B9D; color: white; font-size: 1.3rem; font-weight: bold; 
+        .record-btn {
+            width: 280px; height: 90px; border-radius: 25px; border: none;
+            background: #457B9D; color: white; font-size: 1.3rem; font-weight: bold;
             cursor: pointer; margin: 20px auto; display: block; transition: 0.3s;
         }
         .record-btn.recording { background: #E63946; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
-        textarea { 
-            width: 90%; max-width: 500px; height: 220px; background: #16213e; 
-            color: white; border-radius: 15px; padding: 15px; border: 1px solid #457B9D; 
+        textarea {
+            width: 90%; max-width: 500px; height: 220px; background: #16213e;
+            color: white; border-radius: 15px; padding: 15px; border: 1px solid #457B9D;
             font-size: 1.1rem; line-height: 1.6; margin-top: 10px; resize: vertical;
         }
         textarea:focus { outline: none; border-color: #A8DADC; }
@@ -32,15 +32,15 @@
 <body>
     <h1>Zarjin Pisatelj ✍️</h1>
     <p id="status">Pripravljena na tvoje zgodbe!</p>
-    
+
     <button class="record-btn" id="recordBtn" onclick="toggleRecording()">🎤 ZAČNI PISANJE</button>
-    
+
     <textarea id="textOutput" placeholder="Tukaj se bo izpisalo tvoje besedilo. Med snemanjem lahko sama klikaš in popravljaš!"></textarea>
 
     <div class="hint">
         🗣️ Reci: <b>"pika"</b> → .&nbsp;&nbsp; <b>"vejica"</b> → ,&nbsp;&nbsp; <b>"vprašaj"</b> → ?&nbsp;&nbsp; <b>"klicaj"</b> → !&nbsp;&nbsp; <b>"nov odstavek"</b> → ↵
     </div>
-    
+
     <div class="btn-row">
         <button class="btn btn-green" onclick="speak()">🔊 Preberi</button>
         <button class="btn btn-blue" onclick="copyText()">📋 Kopiraj</button>
@@ -55,15 +55,19 @@
         // Zamenjave za ločila
         function applyPunctuation(text) {
             return text
-                .replace(/\b(pika)\b/gi, '.')
-                .replace(/\b(vejica)\b/gi, ',')
-                .replace(/\b(vprašaj)\b/gi, '?')
-                .replace(/\b(klicaj)\b/gi, '!')
-                .replace(/\b(nov odstavek|nova vrstica)\b/gi, '\n')
-                .replace(/\b(dvopičje)\b/gi, ':')
-                .replace(/\b(pomišljaj)\b/gi, ' - ')
+                // Najprej zamenjaj besede za ločila (brez presledka pred ločilom)
+                .replace(/\s*(pika)\s*/gi, '. ')
+                .replace(/\s*(vejica)\s*/gi, ', ')
+                .replace(/\s*(vprašaj)\s*/gi, '? ')
+                .replace(/\s*(klicaj)\s*/gi, '! ')
+                .replace(/\s*(nov odstavek|nova vrstica)\s*/gi, '\n')
+                .replace(/\s*(dvopičje)\s*/gi, ': ')
+                .replace(/\s*(pomišljaj)\s*/gi, ' - ')
+                // Počisti dvojne presledke
+                .replace(/ {2,}/g, ' ')
                 // Po ločilu velika začetnica
-                .replace(/([.?!]\s*)([a-zčšžćđ])/g, (m, p, c) => p + c.toUpperCase());
+                .replace(/([.?!]\s*)([a-zčšžćđ])/g, (m, p, c) => p + c.toUpperCase())
+                .trim();
         }
 
         function capitalizeFirst(text) {
