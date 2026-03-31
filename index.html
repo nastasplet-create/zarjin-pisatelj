@@ -52,7 +52,6 @@
         let recognition = null;
         let isRecording = false;
         let confirmedText = '';
-        let restartAfterEnd = false;
 
         function applyPunctuation(text) {
             text = text.replace(/\s*\bpika\b\s*/gi,        '. ');
@@ -78,12 +77,9 @@
 
         function appendToConfirmed(transcript) {
             let processed = applyPunctuation(transcript);
-            if (endsWithBreak(confirmedText)) {
-                processed = capitalizeFirst(processed);
-            }
+            if (endsWithBreak(confirmedText)) processed = capitalizeFirst(processed);
             const needsSpace = confirmedText.length > 0
-                && !confirmedText.endsWith('\n')
-                && !confirmedText.endsWith(' ');
+                && !confirmedText.endsWith('\n') && !confirmedText.endsWith(' ');
             confirmedText += (needsSpace ? ' ' : '') + processed;
         }
 
@@ -92,14 +88,18 @@
             else stopRecording();
         }
 
-        function buildAndStartRecognition() {
+        function startRecording() {
             const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!Speech) return;
+            if (!Speech) { alert("Tvoj brskalnik ne podpira govora. Prosim uporabi Chrome."); return; }
+
+            confirmedText = document.getElementById('textOutput').value;
 
             recognition = new Speech();
             recognition.lang = 'sl-SI';
             recognition.maxAlternatives = 1;
-            recognition.continuous = false;
+            // Na telefonu: continuous=true, interimResults=false → brez klikanja, brez restartov
+            // Na računalniku: continuous=true, interimResults=true → sproten prikaz
+            recognition.continuous = true;
             recognition.interimResults = !isMobile;
 
             recognition.onresult = (event) => {
@@ -112,39 +112,25 @@
                         interimText = event.results[i][0].transcript;
                     }
                 }
-                const needsSpace = interimText && confirmedText.length > 0
+                const sp = interimText && confirmedText.length > 0
                     && !confirmedText.endsWith('\n') && !confirmedText.endsWith(' ');
                 document.getElementById('textOutput').value =
-                    confirmedText + (interimText ? (needsSpace ? ' ' : '') + interimText : '');
+                    confirmedText + (interimText ? (sp ? ' ' : '') + interimText : '');
             };
 
             recognition.onerror = (e) => {
+                // Ignoriraj no-speech in aborted — ne ustavi snemanja
                 if (e.error === 'no-speech' || e.error === 'aborted') return;
                 console.error('Napaka:', e.error);
             };
 
             recognition.onend = () => {
-                if (isRecording && restartAfterEnd) {
-                    setTimeout(() => {
-                        if (isRecording) {
-                            try { buildAndStartRecognition(); } catch(e) {}
-                        }
-                    }, 200);
-                }
+                // continuous=true ne bi smel sprožiti onend med snemanjem
+                // Če se vseeno zgodi (Android bug), tiho ignoriramo
             };
 
-            try { recognition.start(); } catch(e) { console.error(e); }
-        }
+            try { recognition.start(); } catch(e) { console.error(e); return; }
 
-        function startRecording() {
-            const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!Speech) {
-                alert("Tvoj brskalnik ne podpira govora. Prosim uporabi Chrome.");
-                return;
-            }
-            confirmedText = document.getElementById('textOutput').value;
-            restartAfterEnd = true;
-            buildAndStartRecognition();
             isRecording = true;
             document.getElementById('recordBtn').textContent = '⏹️ USTAVI';
             document.getElementById('recordBtn').classList.add('recording');
@@ -153,15 +139,12 @@
 
         function stopRecording() {
             isRecording = false;
-            restartAfterEnd = false;
             if (recognition) {
                 try { recognition.stop(); } catch(e) {}
                 recognition = null;
             }
             let text = document.getElementById('textOutput').value.trim();
-            if (text && !text.endsWith('.') && !text.endsWith('?') && !text.endsWith('!')) {
-                text += '.';
-            }
+            if (text && !text.endsWith('.') && !text.endsWith('?') && !text.endsWith('!')) text += '.';
             document.getElementById('textOutput').value = text;
             confirmedText = text;
             document.getElementById('recordBtn').textContent = '🎤 ZAČNI PISANJE';
