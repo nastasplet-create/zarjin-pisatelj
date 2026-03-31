@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zarjin Pisatelj</title>
+    <style>
+        body { font-family: sans-serif; background: #1a1a2e; color: white; text-align: center; padding: 20px; }
+        h1 { color: #A8DADC; font-family: 'Comic Sans MS', cursive; }
+        .record-btn { width: 250px; height: 80px; border-radius: 20px; border: none; background: #457B9D; color: white; font-size: 1.2rem; font-weight: bold; cursor: pointer; margin: 20px; }
+        .record-btn.recording { background: #E63946; }
+        textarea { width: 100%; max-width: 500px; height: 150px; background: #16213e; color: white; border-radius: 15px; padding: 10px; border: 1px solid #333; }
+        .btn-row { margin: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; border-radius: 10px; border: none; color: white; cursor: pointer; }
+        .btn-green { background: #2D6A4F; }
+        .btn-red { background: #E63946; }
+    </style>
+</head>
+<body>
+    <h1>Zarjin Pisatelj ✍️</h1>
+    <p id="status">Pripravljena!</p>
+    <button class="record-btn" id="recordBtn" onclick="toggleRecording()">🎤 ZAČNI PISANJE</button>
+    <br>
+    <textarea id="textOutput" placeholder="Tukaj se bo izpisalo besedilo..."></textarea>
+    <div class="btn-row">
+        <button class="btn btn-green" onclick="speak()">🔊 Preberi</button>
+        <button class="btn btn-red" onclick="document.getElementById('textOutput').value=''">🗑️ Pobriši</button>
+    </div>
+
+    <script>
+        let recognition;
+        let isRecording = false;
+
+        function toggleRecording() {
+            if (!isRecording) {
+                const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new Speech();
+                recognition.lang = 'sl-SI';
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                
+                recognition.onresult = (event) => {
+                    let text = '';
+                    for (let i = 0; i < event.results.length; i++) {
+                        text += event.results[i][0].transcript;
+                    }
+                    document.getElementById('textOutput').value = text;
+                };
+
+                recognition.start();
+                isRecording = true;
+                document.getElementById('recordBtn').textContent = '⏹️ USTAVI';
+                document.getElementById('recordBtn').classList.add('recording');
+                document.getElementById('status').textContent = 'Poslušam...';
+            } else {
+                recognition.stop();
+                isRecording = false;
+                document.getElementById('recordBtn').textContent = '🎤 ZAČNI PISANJE';
+                document.getElementById('recordBtn').classList.remove('recording');
+                document.getElementById('status').textContent = 'Končano.';
+            }
+        }
+
+        function speak() {
+            const text = document.getElementById('textOutput').value;
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'sl-SI';
+            window.speechSynthesis.speak(utter);
+        }
+    </script>
+</body>
+</html>
