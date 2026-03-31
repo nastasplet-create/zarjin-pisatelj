@@ -14,7 +14,7 @@
             cursor: pointer; margin: 20px auto; display: block; transition: 0.3s;
         }
         .record-btn.recording { background: #E63946; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        @keyframes pulse { 0%{transform:scale(1);} 50%{transform:scale(1.05);} 100%{transform:scale(1);} }
         textarea {
             width: 90%; max-width: 500px; height: 220px; background: #16213e;
             color: white; border-radius: 15px; padding: 15px; border: 1px solid #457B9D;
@@ -28,6 +28,7 @@
         .btn-red { background: #E63946; }
         .btn-blue { background: #457B9D; }
         .hint { font-size: 0.75rem; color: #666; margin-top: 10px; line-height: 1.8; }
+        #editNotice { font-size: 0.75rem; color: #E63946; margin-top: 5px; display: none; }
     </style>
 </head>
 <body>
@@ -36,7 +37,8 @@
 
     <button class="record-btn" id="recordBtn" onclick="toggleRecording()">🎤 ZAČNI PISANJE</button>
 
-    <textarea id="textOutput" placeholder="Tukaj se bo izpisalo tvoje besedilo. Med snemanjem lahko sama klikaš in popravljaš!"></textarea>
+    <textarea id="textOutput" placeholder="Tukaj se bo izpisalo tvoje besedilo..."></textarea>
+    <p id="editNotice">✏️ Urejanje — govor se dodaja na konec</p>
 
     <div class="hint">
         🗣️ Reci: <b>"pika"</b> → .&nbsp;&nbsp; <b>"vejica"</b> → ,&nbsp;&nbsp; <b>"vprašaj"</b> → ?&nbsp;&nbsp; <b>"klicaj"</b> → !&nbsp;&nbsp; <b>"nov odstavek"</b> → ↵
@@ -51,21 +53,25 @@
     <script>
         let recognition = null;
         let isRecording = false;
-        let confirmedText = '';   // besedilo ki je že potrjeno (final)
+        let confirmedText = '';
+        let userIsEditing = false;
         let restartTimer = null;
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
         function applyPunctuation(text) {
-            return text
-                .replace(/\s*(pika)\s*/gi, '. ')
-                .replace(/\s*(vejica)\s*/gi, ', ')
-                .replace(/\s*(vprašaj)\s*/gi, '? ')
-                .replace(/\s*(klicaj)\s*/gi, '! ')
-                .replace(/\s*(nov odstavek|nova vrstica)\s*/gi, '\n')
-                .replace(/\s*(dvopičje)\s*/gi, ': ')
-                .replace(/\s*(pomišljaj)\s*/gi, ' - ')
-                .replace(/ {2,}/g, ' ')
-                .replace(/([.?!] )([a-zčšžćđ])/g, (m, p, c) => p + c.toUpperCase())
-                .trim();
+            // Zamenjaj besede za ločila
+            text = text.replace(/\s*\bpika\b\s*/gi, '. ');
+            text = text.replace(/\s*\bvejica\b\s*/gi, ', ');
+            text = text.replace(/\s*\bvprašaj\b\s*/gi, '? ');
+            text = text.replace(/\s*\bklicaj\b\s*/gi, '! ');
+            text = text.replace(/\s*\b(nov odstavek|nova vrstica)\b\s*/gi, '\n');
+            text = text.replace(/\s*\bdvopičje\b\s*/gi, ': ');
+            text = text.replace(/\s*\bpomišljaj\b\s*/gi, ' - ');
+            // Počisti dvojne presledke (ne dotikaj se \n)
+            text = text.replace(/[ \t]{2,}/g, ' ');
+            // Velika začetnica po ločilu
+            text = text.replace(/([.?!]\s+)([a-zčšžćđ])/g, (m, p, c) => p + c.toUpperCase());
+            return text.trim();
         }
 
         function capitalizeFirst(text) {
@@ -73,19 +79,36 @@
             return text.charAt(0).toUpperCase() + text.slice(1);
         }
 
-        function needsSpace() {
-            const t = confirmedText;
-            if (!t) return false;
-            return !t.endsWith('\n') && !t.endsWith(' ');
+        function endsWithPunctuation(text) {
+            const t = text.trimEnd();
+            return t.endsWith('.') || t.endsWith('?') || t.endsWith('!') || t.endsWith('\n');
         }
 
-        function toggleRecording() {
-            if (!isRecording) {
-                startRecording();
-            } else {
-                stopRecording();
+        // Ko uporabnik klikne v textarea med snemanjem
+        document.getElementById('textOutput').addEventListener('focus', () => {
+            if (isRecording) {
+                // Shrani trenutno stanje polja (z morebitnimi popravki)
+                confirmedText = document.getElementById('textOutput').value;
+                userIsEditing = true;
+                document.getElementById('editNotice').style.display = 'block';
             }
-        }
+        });
+
+        document.getElementById('textOutput').addEventListener('blur', () => {
+            if (isRecording) {
+                // Ko zapusti polje, posodobi confirmedText
+                confirmedText = document.getElementById('textOutput').value;
+                userIsEditing = false;
+                document.getElementById('editNotice').style.display = 'none';
+            }
+        });
+
+        // Tudi ob vsakem tipkanju posodobi confirmedText
+        document.getElementById('textOutput').addEventListener('input', () => {
+            if (isRecording) {
+                confirmedText = document.getElementById('textOutput').value;
+            }
+        });
 
         function buildRecognition() {
             const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -96,8 +119,8 @@
 
             const rec = new Speech();
             rec.lang = 'sl-SI';
-            rec.continuous = false;      // FALSE — ključno za telefon, brez ponavljanja
-            rec.interimResults = true;
+            rec.continuous = false;
+            rec.interimResults = !isMobile; // na telefonu brez interim (brez piskanja)
             rec.maxAlternatives = 1;
 
             rec.onresult = (event) => {
@@ -109,77 +132,84 @@
                     if (event.results[i].isFinal) {
                         let processed = applyPunctuation(transcript);
 
-                        // Velika začetnica na začetku ali po ločilu
-                        const trimmed = confirmedText.trim();
-                        if (!trimmed || trimmed.endsWith('.') || trimmed.endsWith('?') || trimmed.endsWith('!') || trimmed.endsWith('\n')) {
+                        const base = confirmedText.trimEnd();
+                        if (!base || endsWithPunctuation(base)) {
                             processed = capitalizeFirst(processed);
                         }
 
-                        if (needsSpace()) confirmedText += ' ';
-                        confirmedText += processed;
+                        // Dodaj presledek če je potreben
+                        const needsSpace = confirmedText.length > 0
+                            && !confirmedText.endsWith('\n')
+                            && !confirmedText.endsWith(' ');
+
+                        confirmedText += (needsSpace ? ' ' : '') + processed;
                         interimText = '';
                     } else {
                         interimText = transcript;
                     }
                 }
 
-                document.getElementById('textOutput').value = confirmedText + (interimText ? (needsSpace() ? ' ' : '') + interimText : '');
+                // Prikaži besedilo — ne prepiši če uporabnik ureja
+                if (!userIsEditing) {
+                    const needsSpace = interimText && confirmedText.length > 0
+                        && !confirmedText.endsWith('\n')
+                        && !confirmedText.endsWith(' ');
+                    document.getElementById('textOutput').value =
+                        confirmedText + (interimText ? (needsSpace ? ' ' : '') + interimText : '');
+                }
             };
 
             rec.onerror = (e) => {
-                if (e.error === 'no-speech') return; // ignoriraj tišino
+                if (e.error === 'no-speech') return;
                 console.error('Napaka:', e.error);
             };
 
             rec.onend = () => {
-                // Samodejno nadaljuj poslušanje (zamenjuje continuous=true)
                 if (isRecording) {
                     restartTimer = setTimeout(() => {
-                        if (isRecording) {
+                        if (isRecording && recognition) {
                             try { recognition.start(); } catch(e) {}
                         }
-                    }, 100);
+                    }, 150);
                 }
             };
 
             return rec;
         }
 
-        function startRecording() {
-            const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!Speech) {
-                alert("Tvoj brskalnik ne podpira govora. Prosim uporabi Chrome.");
-                return;
+        function toggleRecording() {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
             }
+        }
 
-            // Shrani kar je že v polju
+        function startRecording() {
             confirmedText = document.getElementById('textOutput').value;
+            userIsEditing = false;
 
             recognition = buildRecognition();
             if (!recognition) return;
 
-            try {
-                recognition.start();
-            } catch(e) {
-                console.error(e);
-                return;
-            }
+            try { recognition.start(); } catch(e) { console.error(e); return; }
 
             isRecording = true;
             document.getElementById('recordBtn').textContent = '⏹️ USTAVI';
             document.getElementById('recordBtn').classList.add('recording');
-            document.getElementById('status').textContent = '👂 Poslušam te...';
+            document.getElementById('status').textContent = isMobile ? '👂 Poslušam (telefon)...' : '👂 Poslušam...';
         }
 
         function stopRecording() {
             isRecording = false;
+            userIsEditing = false;
+            document.getElementById('editNotice').style.display = 'none';
             if (restartTimer) clearTimeout(restartTimer);
             if (recognition) {
                 try { recognition.stop(); } catch(e) {}
                 recognition = null;
             }
 
-            // Zaključi z piko če ni ločila
             let text = document.getElementById('textOutput').value.trim();
             if (text && !text.endsWith('.') && !text.endsWith('?') && !text.endsWith('!')) {
                 text += '.';
