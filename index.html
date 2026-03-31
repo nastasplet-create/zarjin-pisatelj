@@ -7,7 +7,7 @@
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: white; text-align: center; padding: 20px; margin: 0; }
         h1 { color: #A8DADC; font-family: 'Comic Sans MS', cursive; margin-top: 30px; }
-        #status { color: #aaa; font-size: 0.9rem; margin-bottom: 20px; }
+        #status { color: #aaa; font-size: 0.9rem; margin-bottom: 20px; min-height: 20px; }
         .record-btn {
             width: 280px; height: 90px; border-radius: 25px; border: none;
             background: #457B9D; color: white; font-size: 1.3rem; font-weight: bold;
@@ -19,6 +19,7 @@
             width: 90%; max-width: 500px; height: 220px; background: #16213e;
             color: white; border-radius: 15px; padding: 15px; border: 1px solid #457B9D;
             font-size: 1.1rem; line-height: 1.6; margin-top: 10px; resize: vertical;
+            box-sizing: border-box;
         }
         textarea:focus { outline: none; border-color: #A8DADC; }
         .btn-row { margin: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
@@ -26,7 +27,7 @@
         .btn-green { background: #2D6A4F; }
         .btn-red { background: #E63946; }
         .btn-blue { background: #457B9D; }
-        .hint { font-size: 0.75rem; color: #555; margin-top: 10px; line-height: 1.8; }
+        .hint { font-size: 0.75rem; color: #666; margin-top: 10px; line-height: 1.8; }
     </style>
 </head>
 <body>
@@ -48,14 +49,13 @@
     </div>
 
     <script>
-        let recognition;
+        let recognition = null;
         let isRecording = false;
-        let savedText = '';
+        let confirmedText = '';   // besedilo ki je že potrjeno (final)
+        let restartTimer = null;
 
-        // Zamenjave za ločila
         function applyPunctuation(text) {
             return text
-                // Najprej zamenjaj besede za ločila (brez presledka pred ločilom)
                 .replace(/\s*(pika)\s*/gi, '. ')
                 .replace(/\s*(vejica)\s*/gi, ', ')
                 .replace(/\s*(vprašaj)\s*/gi, '? ')
@@ -63,16 +63,20 @@
                 .replace(/\s*(nov odstavek|nova vrstica)\s*/gi, '\n')
                 .replace(/\s*(dvopičje)\s*/gi, ': ')
                 .replace(/\s*(pomišljaj)\s*/gi, ' - ')
-                // Počisti dvojne presledke
                 .replace(/ {2,}/g, ' ')
-                // Po ločilu velika začetnica
-                .replace(/([.?!]\s*)([a-zčšžćđ])/g, (m, p, c) => p + c.toUpperCase())
+                .replace(/([.?!] )([a-zčšžćđ])/g, (m, p, c) => p + c.toUpperCase())
                 .trim();
         }
 
         function capitalizeFirst(text) {
             if (!text) return text;
             return text.charAt(0).toUpperCase() + text.slice(1);
+        }
+
+        function needsSpace() {
+            const t = confirmedText;
+            if (!t) return false;
+            return !t.endsWith('\n') && !t.endsWith(' ');
         }
 
         function toggleRecording() {
@@ -83,6 +87,64 @@
             }
         }
 
+        function buildRecognition() {
+            const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!Speech) {
+                alert("Tvoj brskalnik ne podpira govora. Prosim uporabi Chrome.");
+                return null;
+            }
+
+            const rec = new Speech();
+            rec.lang = 'sl-SI';
+            rec.continuous = false;      // FALSE — ključno za telefon, brez ponavljanja
+            rec.interimResults = true;
+            rec.maxAlternatives = 1;
+
+            rec.onresult = (event) => {
+                let interimText = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+
+                    if (event.results[i].isFinal) {
+                        let processed = applyPunctuation(transcript);
+
+                        // Velika začetnica na začetku ali po ločilu
+                        const trimmed = confirmedText.trim();
+                        if (!trimmed || trimmed.endsWith('.') || trimmed.endsWith('?') || trimmed.endsWith('!') || trimmed.endsWith('\n')) {
+                            processed = capitalizeFirst(processed);
+                        }
+
+                        if (needsSpace()) confirmedText += ' ';
+                        confirmedText += processed;
+                        interimText = '';
+                    } else {
+                        interimText = transcript;
+                    }
+                }
+
+                document.getElementById('textOutput').value = confirmedText + (interimText ? (needsSpace() ? ' ' : '') + interimText : '');
+            };
+
+            rec.onerror = (e) => {
+                if (e.error === 'no-speech') return; // ignoriraj tišino
+                console.error('Napaka:', e.error);
+            };
+
+            rec.onend = () => {
+                // Samodejno nadaljuj poslušanje (zamenjuje continuous=true)
+                if (isRecording) {
+                    restartTimer = setTimeout(() => {
+                        if (isRecording) {
+                            try { recognition.start(); } catch(e) {}
+                        }
+                    }, 100);
+                }
+            };
+
+            return rec;
+        }
+
         function startRecording() {
             const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!Speech) {
@@ -90,50 +152,19 @@
                 return;
             }
 
-            // Shrani trenutno besedilo (kar je že v polju)
-            savedText = document.getElementById('textOutput').value;
+            // Shrani kar je že v polju
+            confirmedText = document.getElementById('textOutput').value;
 
-            recognition = new Speech();
-            recognition.lang = 'sl-SI';
-            recognition.continuous = true;
-            recognition.interimResults = true;
+            recognition = buildRecognition();
+            if (!recognition) return;
 
-            recognition.onresult = (event) => {
-                let interim = '';
-                let finalSegment = '';
+            try {
+                recognition.start();
+            } catch(e) {
+                console.error(e);
+                return;
+            }
 
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) {
-                        finalSegment += event.results[i][0].transcript + ' ';
-                    } else {
-                        interim += event.results[i][0].transcript;
-                    }
-                }
-
-                if (finalSegment) {
-                    // Dodaj ločila in veliko začetnico
-                    let processed = applyPunctuation(finalSegment.trim());
-                    // Če je savedText prazen ali se konča s presledkom/ločilom, daj veliko začetnico
-                    if (!savedText || savedText.trim() === '' || savedText.trim().endsWith('.') || savedText.trim().endsWith('?') || savedText.trim().endsWith('!') || savedText.trim().endsWith('\n')) {
-                        processed = capitalizeFirst(processed);
-                    }
-                    savedText += (savedText && !savedText.endsWith('\n') ? ' ' : '') + processed;
-                }
-
-                // Prikaži: shranjeno + vmesno (interim)
-                document.getElementById('textOutput').value = savedText + (interim ? interim : '');
-            };
-
-            recognition.onerror = (e) => {
-                console.error(e.error);
-                stopRecording();
-            };
-
-            recognition.onend = () => {
-                if (isRecording) recognition.start();
-            };
-
-            recognition.start();
             isRecording = true;
             document.getElementById('recordBtn').textContent = '⏹️ USTAVI';
             document.getElementById('recordBtn').classList.add('recording');
@@ -141,16 +172,20 @@
         }
 
         function stopRecording() {
-            if (recognition) recognition.stop();
             isRecording = false;
+            if (restartTimer) clearTimeout(restartTimer);
+            if (recognition) {
+                try { recognition.stop(); } catch(e) {}
+                recognition = null;
+            }
 
-            // Zaključi besedilo
+            // Zaključi z piko če ni ločila
             let text = document.getElementById('textOutput').value.trim();
             if (text && !text.endsWith('.') && !text.endsWith('?') && !text.endsWith('!')) {
                 text += '.';
             }
             document.getElementById('textOutput').value = text;
-            savedText = text;
+            confirmedText = text;
 
             document.getElementById('recordBtn').textContent = '🎤 ZAČNI PISANJE';
             document.getElementById('recordBtn').classList.remove('recording');
@@ -163,10 +198,10 @@
             window.speechSynthesis.cancel();
             const utter = new SpeechSynthesisUtterance(text);
             utter.lang = 'sl-SI';
+            utter.rate = 0.92;
             const voices = window.speechSynthesis.getVoices();
             const sloVoice = voices.find(v => v.lang === 'sl-SI' || v.lang.startsWith('sl'));
             if (sloVoice) utter.voice = sloVoice;
-            utter.rate = 0.95;
             window.speechSynthesis.speak(utter);
             document.getElementById('status').textContent = '🔊 Berem...';
             utter.onend = () => document.getElementById('status').textContent = '✅ Končano.';
@@ -175,15 +210,16 @@
         function copyText() {
             const text = document.getElementById('textOutput').value;
             if (!text) return;
-            navigator.clipboard.writeText(text);
-            document.getElementById('status').textContent = '📋 Kopirano!';
-            setTimeout(() => document.getElementById('status').textContent = '✅ Končano.', 2000);
+            navigator.clipboard.writeText(text).then(() => {
+                document.getElementById('status').textContent = '📋 Kopirano!';
+                setTimeout(() => document.getElementById('status').textContent = '✅ Končano.', 2000);
+            });
         }
 
         function clearText() {
             if (confirm("Ali res želiš pobrisati vse?")) {
                 document.getElementById('textOutput').value = '';
-                savedText = '';
+                confirmedText = '';
                 document.getElementById('status').textContent = '🗑️ Pobrisano.';
             }
         }
