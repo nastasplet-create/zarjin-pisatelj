@@ -1,52 +1,138 @@
-<script>
-    let recognition;
-    let isRecording = false;
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zarjin Pisatelj ✍️</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a2e; color: white; text-align: center; padding: 20px; margin: 0; }
+        h1 { color: #A8DADC; font-family: 'Comic Sans MS', cursive; margin-top: 30px; }
+        #status { color: #aaa; font-size: 0.9rem; margin-bottom: 20px; }
+        .record-btn { 
+            width: 280px; height: 90px; border-radius: 25px; border: none; 
+            background: #457B9D; color: white; font-size: 1.3rem; font-weight: bold; 
+            cursor: pointer; margin: 20px auto; display: block; transition: 0.3s;
+        }
+        .record-btn.recording { background: #E63946; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        textarea { 
+            width: 90%; max-width: 500px; height: 180px; background: #16213e; 
+            color: white; border-radius: 15px; padding: 15px; border: 1px solid #333; 
+            font-size: 1.1rem; line-height: 1.5; margin-top: 10px;
+        }
+        .btn-row { margin: 25px; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }
+        .btn { padding: 12px 25px; border-radius: 12px; border: none; color: white; cursor: pointer; font-weight: bold; font-size: 1rem; }
+        .btn-green { background: #2D6A4F; }
+        .btn-red { background: #E63946; }
+        .btn-blue { background: #457B9D; }
+    </style>
+</head>
+<body>
+    <h1>Zarjin Pisatelj ✍️</h1>
+    <p id="status">Pripravljena na tvoje zgodbe!</p>
+    
+    <button class="record-btn" id="recordBtn" onclick="toggleRecording()">🎤 ZAČNI PISANJE</button>
+    
+    <textarea id="textOutput" placeholder="Tukaj se bo izpisalo tvoje besedilo..."></textarea>
+    
+    <div class="btn-row">
+        <button class="btn btn-green" onclick="speak()">🔊 Preberi</button>
+        <button class="btn btn-blue" onclick="copyText()">📋 Kopiraj</button>
+        <button class="btn btn-red" onclick="clearText()">🗑️ Pobriši</button>
+    </div>
 
-    function toggleRecording() {
-        if (!isRecording) {
-            const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new Speech();
-            recognition.lang = 'sl-SI';
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            
-            recognition.onresult = (event) => {
-                let text = '';
-                for (let i = 0; i < event.results.length; i++) {
-                    let segment = event.results[i][0].transcript;
-                    
-                    // Mala izboljšava: prva črka velika
-                    if (i === 0 || text.endsWith('. ') || text.endsWith('? ')) {
-                        segment = segment.trim();
-                        segment = segment.charAt(0).toUpperCase() + segment.slice(1);
-                    }
-                    text += segment + ' ';
+    <script>
+        let recognition;
+        let isRecording = false;
+
+        function toggleRecording() {
+            const recordBtn = document.getElementById('recordBtn');
+            const status = document.getElementById('status');
+            const output = document.getElementById('textOutput');
+
+            if (!isRecording) {
+                const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!Speech) {
+                    alert("Tvoj brskalnik ne podpira govora. Prosim uporabi Chrome.");
+                    return;
                 }
                 
-                // Če se stavek konča in je premor, dodaj piko (simulacija)
-                document.getElementById('textOutput').value = text.trim();
-            };
+                recognition = new Speech();
+                recognition.lang = 'sl-SI';
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                
+                recognition.onresult = (event) => {
+                    let finalTranscript = '';
+                    for (let i = 0; i < event.results.length; i++) {
+                        let transcript = event.results[i][0].transcript;
+                        
+                        // Samodejna velika začetnica za vsak nov stavek
+                        if (i === 0 || finalTranscript.trim().endsWith('.') || finalTranscript.trim().endsWith('?') || finalTranscript.trim().endsWith('!')) {
+                            transcript = transcript.trim();
+                            transcript = transcript.charAt(0).toUpperCase() + transcript.slice(1);
+                        }
+                        finalTranscript += transcript + ' ';
+                    }
+                    output.value = finalTranscript.trim();
+                };
 
-            recognition.start();
-            isRecording = true;
-            document.getElementById('recordBtn').textContent = '⏹️ USTAVI';
-            document.getElementById('recordBtn').classList.add('recording');
-            document.getElementById('status').textContent = 'Poslušam...';
-        } else {
-            recognition.stop();
-            isRecording = false;
-            
-            // Ob koncu dodaj piko, če je ni
-            let finalVal = document.getElementById('textOutput').value.trim();
-            if (finalVal && !finalVal.endsWith('.') && !finalVal.endsWith('?') && !finalVal.endsWith('!')) {
-                finalVal += '.';
+                recognition.onerror = (event) => {
+                    console.error(event.error);
+                    stopRecording();
+                };
+
+                recognition.start();
+                isRecording = true;
+                recordBtn.textContent = '⏹️ USTAVI';
+                recordBtn.classList.add('recording');
+                status.textContent = 'Poslušam te...';
+            } else {
+                stopRecording();
             }
-            document.getElementById('textOutput').value = finalVal;
-            
-            document.getElementById('recordBtn').textContent = '🎤 ZAČNI PISANJE';
-            document.getElementById('recordBtn').classList.remove('recording');
-            document.getElementById('status').textContent = 'Končano.';
         }
-    }
-    // ... ostalo ostane isto
-</script>
+
+        function stopRecording() {
+            if (recognition) recognition.stop();
+            isRecording = false;
+            const recordBtn = document.getElementById('recordBtn');
+            const status = document.getElementById('status');
+            const output = document.getElementById('textOutput');
+
+            // Dodaj piko na koncu, če je ni
+            let text = output.value.trim();
+            if (text && !text.endsWith('.') && !text.endsWith('?') && !text.endsWith('!')) {
+                text += '.';
+            }
+            output.value = text;
+
+            recordBtn.textContent = '🎤 ZAČNI PISANJE';
+            recordBtn.classList.remove('recording');
+            status.textContent = 'Končano.';
+        }
+
+        function speak() {
+            const text = document.getElementById('textOutput').value;
+            if (!text) return;
+            window.speechSynthesis.cancel();
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'sl-SI';
+            window.speechSynthesis.speak(utter);
+        }
+
+        function copyText() {
+            const text = document.getElementById('textOutput').value;
+            if (!text) return;
+            navigator.clipboard.writeText(text);
+            alert("Kopirano v odložišče!");
+        }
+
+        function clearText() {
+            if (confirm("Ali res želiš pobrisati vse?")) {
+                document.getElementById('textOutput').value = '';
+                document.getElementById('status').textContent = 'Pobrisano.';
+            }
+        }
+    </script>
+</body>
+</html>
